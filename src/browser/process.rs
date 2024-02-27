@@ -370,7 +370,7 @@ impl Process {
         }
 
         if launch_options.headless && !launch_options.devtools {
-            args.extend(["--headless"]);
+            args.extend(["--headless=new"]);
         } else if launch_options.devtools {
             args.extend(["--auto-open-devtools-for-tabs"]);
         }
