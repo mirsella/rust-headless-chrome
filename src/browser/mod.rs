@@ -85,6 +85,7 @@ pub struct BrowserInner {
     transport: Arc<Transport>,
     tabs: Arc<Mutex<Vec<Arc<Tab>>>>,
     loop_shutdown_tx: mpsc::SyncSender<()>,
+    close_on_drop: bool,
 }
 
 impl Browser {
@@ -103,7 +104,7 @@ impl Browser {
             idle_browser_timeout,
         )?);
 
-        Self::create_browser(Some(process), transport, idle_browser_timeout)
+        Self::create_browser(Some(process), transport, idle_browser_timeout, true)
     }
 
     /// Calls [`Browser::new`] with options to launch a headless browser using whatever Chrome / Chromium
@@ -132,13 +133,14 @@ impl Browser {
         let transport = Arc::new(Transport::new(url, None, idle_browser_timeout)?);
         trace!("created transport");
 
-        Self::create_browser(None, transport, idle_browser_timeout)
+        Self::create_browser(None, transport, idle_browser_timeout, false)
     }
 
     fn create_browser(
         process: Option<Process>,
         transport: Arc<Transport>,
         idle_browser_timeout: Duration,
+        close_on_drop: bool,
     ) -> Result<Self> {
         let tabs = Arc::new(Mutex::new(Vec::with_capacity(1)));
 
@@ -150,6 +152,7 @@ impl Browser {
                 tabs,
                 transport,
                 loop_shutdown_tx: shutdown_tx,
+                close_on_drop,
             }),
         };
 
@@ -194,7 +197,7 @@ impl Browser {
     #[deprecated(since = "1.0.4", note = "Use new_tab() instead.")]
     pub fn wait_for_initial_tab(&self) -> Result<Arc<Tab>> {
         match util::Wait::with_timeout(Duration::from_secs(10))
-            .until(|| self.inner.tabs.lock().unwrap().first().map(Arc::clone))
+            .until(|| self.inner.tabs.lock().unwrap().first().cloned())
         {
             Ok(tab) => Ok(tab),
             Err(_) => self.new_tab(),
@@ -450,9 +453,11 @@ impl Browser {
 impl Drop for BrowserInner {
     fn drop(&mut self) {
         info!("Dropping browser");
-        self.transport
-            .call_method_on_browser(cdp::Browser::Close(None))
-            .ok();
+        if self.close_on_drop {
+            self.transport
+                .call_method_on_browser(cdp::Browser::Close(None))
+                .ok();
+        }
         self.loop_shutdown_tx.send(()).ok();
         self.transport.shutdown();
     }
