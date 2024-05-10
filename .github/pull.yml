@@ -2,3 +2,4 @@ version: "1"
 rules:
   - base: main
     upstream: rust-headless-chrome:main
+    mergeMethod: merge
