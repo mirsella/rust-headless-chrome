@@ -16,7 +16,7 @@ use url::Url;
 use which::which;
 
 use crate::protocol::cdp::{
-    self, types::Event, types::Method, Browser as B, Target, Target::GetTargets, CSS, DOM,
+    self, types::Event, types::Method, Browser as B, Target, Target::GetTargets,
 };
 
 use crate::browser::context::Context;
@@ -170,10 +170,6 @@ impl Browser {
         trace!("Calling set discover");
         browser.call_method(SetDiscoverTargets { discover: true })?;
 
-        let tab = browser.new_tab()?;
-
-        tab.call_method(DOM::Enable(None))?;
-        tab.call_method(CSS::Enable(None))?;
         Ok(browser)
     }
 
