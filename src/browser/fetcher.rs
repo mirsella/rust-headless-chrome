@@ -32,13 +32,13 @@ const PLATFORM: &str = "mac";
 #[cfg(windows)]
 const PLATFORM: &str = "win";
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Revision {
     Specific(String),
     Latest,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FetcherOptions {
     /// The desired chrome revision.
     ///
@@ -112,7 +112,7 @@ impl Fetcher {
     // look for good existing installation, if none exists then download and install
     pub fn fetch(&self) -> Result<PathBuf> {
         let rev = match self.options.revision {
-            Revision::Specific(ref v) => v.to_string(),
+            Revision::Specific(ref v) => v.clone(),
             Revision::Latest => latest_revision()?,
         };
 
@@ -262,7 +262,7 @@ impl Fetcher {
 
             let comment = file.comment();
             if !comment.is_empty() {
-                trace!("File {} comment: {}", i, comment);
+                trace!("File {i} comment: {comment}");
             }
 
             if (file.name()).ends_with('/') {

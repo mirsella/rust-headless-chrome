@@ -1,11 +1,11 @@
-use std::{
-    borrow::BorrowMut,
-    ffi::OsStr,
-    io::{BufRead, BufReader, prelude::*},
-    net,
-    process::{Child, Command, Stdio},
-    time::Duration,
-};
+use std::borrow::BorrowMut;
+use std::ffi::OsStr;
+use std::hash::{Hash, Hasher};
+use std::io::prelude::*;
+use std::io::{BufRead, BufReader};
+use std::net;
+use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
 #[cfg(test)]
 use std::cell::RefCell;
@@ -73,15 +73,15 @@ impl Drop for TemporaryProcess {
         self.0.kill().and_then(|()| self.0.wait()).ok();
         if let Some(dir) = self.1.take() {
             if let Err(e) = dir.close() {
-                warn!("Failed to close temporary directory: {}", e);
+                warn!("Failed to close temporary directory: {e}");
             }
-        };
+        }
     }
 }
 
 /// Represents the way in which Chrome is run. By default it will search for a Chrome
 /// binary on the system, use an available port for debugging, and start in headless mode.
-#[derive(Clone, Debug, Builder)]
+#[derive(Clone, Debug, Builder, PartialEq, Eq)]
 pub struct LaunchOptions<'a> {
     /// Determines whether to run headless version of the browser. Defaults to true.
     #[builder(default = "true")]
@@ -208,6 +208,44 @@ impl<'a> LaunchOptions<'a> {
     }
 }
 
+impl Hash for LaunchOptions<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.headless.hash(state);
+        self.sandbox.hash(state);
+        self.devtools.hash(state);
+        self.enable_gpu.hash(state);
+        self.enable_logging.hash(state);
+        self.window_size.hash(state);
+        self.port.hash(state);
+        self.ignore_certificate_errors.hash(state);
+        self.path.hash(state);
+        self.user_data_dir.hash(state);
+        self.extensions.hash(state);
+        self.args.hash(state);
+        self.ignore_default_args.hash(state);
+        self.disable_default_args.hash(state);
+
+        #[cfg(feature = "fetch")]
+        self.fetcher_options.hash(state);
+
+        self.idle_browser_timeout.hash(state);
+
+        // Convert HashMap to sorted Vec<&(String, String)> for deterministic hashing
+        if let Some(envs) = &self.process_envs {
+            let mut sorted_envs: Vec<_> = envs.iter().collect();
+            sorted_envs.sort_by(|a, b| a.0.cmp(b.0)); // Sort by key
+            for (k, v) in sorted_envs {
+                k.hash(state);
+                v.hash(state);
+            }
+        } else {
+            0_u8.hash(state); // To differentiate None from Some(...)
+        }
+
+        self.proxy_server.hash(state);
+    }
+}
+
 /// These are passed to the Chrome binary by default.
 /// Via <https://github.com/GoogleChrome/puppeteer/blob/master/lib/Launcher.js#L38>
 pub static DEFAULT_ARGS: [&str; 23] = [
@@ -265,11 +303,11 @@ impl Process {
             match Self::ws_url_from_output(process.0.borrow_mut()) {
                 Ok(debug_ws_url) => {
                     url = debug_ws_url;
-                    debug!("Found debugging WS URL: {:?}", url);
+                    debug!("Found debugging WS URL: {url:?}");
                     break;
                 }
                 Err(error) => {
-                    trace!("Problem getting WebSocket URL from Chrome: {}", error);
+                    trace!("Problem getting WebSocket URL from Chrome: {error}");
 
                     if let Some(&ChromeLaunchError::RunningAsRootWithoutNoSandbox) =
                         error.downcast_ref::<ChromeLaunchError>()
@@ -285,10 +323,7 @@ impl Process {
                 }
             }
 
-            trace!(
-                "Trying again to find available debugging port. Attempts: {}",
-                attempts
-            );
+            trace!("Trying again to find available debugging port. Attempts: {attempts}",);
             attempts += 1;
         }
 
@@ -338,7 +373,7 @@ impl Process {
             *dir.borrow_mut() = user_data_dir.to_str().map(std::borrow::ToOwned::to_owned);
         });
 
-        trace!("Chrome will have profile: {}", data_dir_option);
+        trace!("Chrome will have profile: {data_dir_option}");
 
         let mut args = vec![
             port_option.as_str(),
@@ -421,8 +456,8 @@ impl Process {
             .as_ref()
             .ok_or_else(|| anyhow!("Chrome path required"))?;
 
-        info!("Launching Chrome binary at {:?}", &path);
-        trace!("with CLI arguments: {:?}", args);
+        info!("Launching Chrome binary at {}", path.display());
+        trace!("with CLI arguments: {args:?}");
 
         let mut command = Command::new(path);
 
@@ -462,7 +497,7 @@ impl Process {
 
         for line in reader.lines() {
             let chrome_output = line?;
-            trace!("Chrome output: {}", chrome_output);
+            trace!("Chrome output: {chrome_output}");
 
             if chrome_output.contains(root_sandbox) {
                 return Err(ChromeLaunchError::RunningAsRootWithoutNoSandbox {}.into());
